@@ -1,50 +1,20 @@
-FROM php:7.2-fpm
+FROM base-mapagoiano:latest
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl libcurl4-gnutls-dev locales imagemagick libmagickcore-dev libmagickwand-dev zip \
-        ruby ruby-dev libpq-dev gnupg nano iputils-ping git \
-        libfreetype6-dev libjpeg62-turbo-dev libpng-dev
+# Define the ENV variable
+ENV nginx_vhost /etc/nginx/sites-available/default
+ENV nginx_conf /etc/nginx/conf.d/default.conf
 
-RUN curl -sL https://deb.nodesource.com/setup_8.x | bash - \
-    && apt-get install -y nodejs npm
+# Enable PHP-fpm on nginx virtualhost configuration
+COPY compose/production/nginx.conf ${nginx_vhost}
+COPY compose/production/nginx.conf ${nginx_conf}
 
-# Install uglify
-RUN npm install -g \
-        uglify-js@2.2.0 \
-        uglifycss \
-        autoprefixer
-
-# Install sass
-RUN gem install sass -v 3.4.22
-
-# Install extensions
-RUN docker-php-ext-install opcache pdo_pgsql zip xml curl json 
-
-# Install GD
-RUN docker-php-ext-install -j$(nproc) iconv \
-    && docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ \
-    && docker-php-ext-install -j$(nproc) gd
-
-# Install APCu
-RUN pecl install apcu \
-    && echo "extension=apcu.so" > /usr/local/etc/php/conf.d/apcu.ini
-
-# Install imagick
-RUN pecl install imagick-beta \
-    && echo "extension=imagick.so" > /usr/local/etc/php/conf.d/ext-imagick.ini
-
-# Install redis
-RUN pecl install -o -f redis \
-    &&  rm -rf /tmp/pear \
-    &&  docker-php-ext-enable redis
-
-# Install composer
-RUN curl -sS https://getcomposer.org/installer | php \
-    && mv composer.phar /usr/local/bin/composer.phar
+RUN mkdir -p /run/php && \
+    chown -R www-data:www-data /var/www/html && \
+    chown -R www-data:www-data /run/php
 
 # Copy source
 COPY src/index.php /var/www/html/index.php
-COPY src/protected /var/www/html/protected
+COPY --chown=www-data:www-data src/protected /var/www/html/protected
 
 RUN mkdir -p /var/www/html/protected/vendor /var/www/.composer/ && \
     chown -R www-data:www-data /var/www/html/protected/vendor/ /var/www/.composer/
@@ -58,20 +28,37 @@ WORKDIR /var/www/html/protected/application/themes/
 
 RUN find . -maxdepth 1 -mindepth 1 -exec echo "compilando sass do tema " {} \; -exec sass {}/assets/css/sass/main.scss {}/assets/css/main.css -E "UTF-8" \;
 
+RUN mkdir /var/www/html/assets
+RUN mkdir /var/www/html/files
+RUN mkdir /var/www/private-files
+RUN mkdir /var/log/php-fpm
+
 COPY scripts /var/www/scripts
 COPY compose/production/php.ini /usr/local/etc/php/php.ini
+COPY compose/production/php-fpm.conf /usr/local/etc/php-fpm.conf
 COPY compose/config.php /var/www/html/protected/application/conf/config.php
 COPY compose/config.d /var/www/html/protected/application/conf/config.d
 
-RUN ln -s /var/www/html /var/www/src
-
 COPY version.txt /var/www/version.txt
-
 COPY compose/recreate-pending-pcache-cron.sh /recreate-pending-pcache-cron.sh
 COPY compose/entrypoint.sh /entrypoint.sh
+
+RUN chmod -R 775 /var/www/
+
+RUN chmod -R 777 /var/log/nginx /var/lib/nginx
+
+RUN chmod -R 777 /var/log/php-fpm
+
+RUN sed -i 's/\/run/\/var\/log\/nginx/g' /etc/nginx/nginx.conf
+
+RUN chown -R www-data. /var/www/* && chmod -R ugo+w /var/www/*
+
 ENTRYPOINT ["/entrypoint.sh"]
 
 WORKDIR /var/www/html/
-EXPOSE 9000
+
+EXPOSE 80 443
+
+RUN ln -s /var/www/html /var/www/src
 
 CMD ["php-fpm"]

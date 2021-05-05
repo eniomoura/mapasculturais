@@ -4,6 +4,7 @@ namespace MapasCulturais\Entities;
 
 use MapasCulturais;
 use MapasCulturais\i;
+use MapasCulturais\Traits;
 use Doctrine\ORM\Mapping as ORM;
 use MapasCulturais\App;
 
@@ -11,8 +12,13 @@ use MapasCulturais\App;
  * RegistrationMeta
  *
  * @property-read string $result
- * @property \MapasCulturais\Entities\Registration $registration
- * @property array $evaluationData
+ * 
+ * @property integer $id
+ * @property mexed $result
+ * @property object $evaluationData
+ * @property Registration $registration
+ * @property User $user
+ * @property integer $status
  *
  * @ORM\Table(name="registration_evaluation")
  * @ORM\Entity
@@ -20,6 +26,8 @@ use MapasCulturais\App;
  * @ORM\HasLifecycleCallbacks
  */
 class RegistrationEvaluation extends \MapasCulturais\Entity {
+    use Traits\EntityRevision;
+
     const STATUS_EVALUATED = self::STATUS_ENABLED;
     const STATUS_SENT = 2;
 
@@ -52,7 +60,7 @@ class RegistrationEvaluation extends \MapasCulturais\Entity {
      *
      * @ORM\ManyToOne(targetEntity="MapasCulturais\Entities\Registration")
      * @ORM\JoinColumns({
-     *   @ORM\JoinColumn(name="registration_id", referencedColumnName="id", nullable=false)
+     *   @ORM\JoinColumn(name="registration_id", referencedColumnName="id", nullable=false, onDelete="CASCADE")
      * })
      */
     protected $registration;
@@ -62,10 +70,24 @@ class RegistrationEvaluation extends \MapasCulturais\Entity {
      *
      * @ORM\ManyToOne(targetEntity="MapasCulturais\Entities\User")
      * @ORM\JoinColumns({
-     *   @ORM\JoinColumn(name="user_id", referencedColumnName="id", nullable=false)
+     *   @ORM\JoinColumn(name="user_id", referencedColumnName="id", nullable=false, onDelete="CASCADE")
      * })
      */
     protected $user;
+
+    /**
+     * @var \DateTime
+     *
+     * @ORM\Column(name="create_timestamp", type="datetime", nullable=false)
+     */
+    protected $createTimestamp;
+
+    /**
+     * @var \DateTime
+     *
+     * @ORM\Column(name="update_timestamp", type="datetime", nullable=true)
+     */
+    protected $updateTimestamp;
 
     /**
      * @var integer
@@ -214,7 +236,7 @@ class RegistrationEvaluation extends \MapasCulturais\Entity {
     public function postPersist($args = null){
         parent::postPersist($args);
         
-        $this->registration->consolidateResult(true);
+        $this->registration->consolidateResult(true, $this);
     }
 
     /** @ORM\PreRemove */
@@ -223,7 +245,7 @@ class RegistrationEvaluation extends \MapasCulturais\Entity {
     public function postRemove($args = null){
         parent::postRemove($args);
         
-        $this->registration->consolidateResult(true);
+        $this->registration->consolidateResult(true, $this);
     }
 
     /** @ORM\PreUpdate */
@@ -232,6 +254,10 @@ class RegistrationEvaluation extends \MapasCulturais\Entity {
     public function postUpdate($args = null){
         parent::postUpdate($args);
         
-        $this->registration->consolidateResult(true);
+        $this->registration->consolidateResult(true, $this);
+    }
+
+    public function getResult() {
+        return $this->result;
     }
 }

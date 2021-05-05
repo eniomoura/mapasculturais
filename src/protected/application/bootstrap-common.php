@@ -8,11 +8,22 @@ define('ACTIVE_THEME_PATH', THEMES_PATH . 'active/');
 define('PLUGINS_PATH', APPLICATION_PATH . 'plugins/');
 define('MODULES_PATH', APPLICATION_PATH . 'lib/modules/');
 
+define('DOCTRINE_PROXIES_PATH', PROTECTED_PATH . 'DoctrineProxies/');
+if(!is_dir(DOCTRINE_PROXIES_PATH)){
+    mkdir(DOCTRINE_PROXIES_PATH);
+}
+
 define('PRIVATE_FILES_PATH', env('PRIVATE_FILES_PATH', dirname(BASE_PATH) . '/private-files/'));
 define('SESSIONS_SAVE_PATH', env('SESSIONS_SAVE_PATH', PRIVATE_FILES_PATH . 'sessions/'));
 
-if(!is_dir(SESSIONS_SAVE_PATH)){
-    mkdir(SESSIONS_SAVE_PATH);
+if(!is_dir(PRIVATE_FILES_PATH)){
+    mkdir(PRIVATE_FILES_PATH);
+}
+
+if(strpos(SESSIONS_SAVE_PATH,'tcp://') === false){
+    if(!is_dir(SESSIONS_SAVE_PATH)){
+            mkdir(SESSIONS_SAVE_PATH);
+    }
 }
 
 define('AUTOLOAD_TTL', 60 * 5);
@@ -29,13 +40,7 @@ define('MONTH_IN_SECONDS', DAY_IN_SECONDS * 30);
 define('YEAR_IN_SECONDS', DAY_IN_SECONDS * 365 );
 
 
-if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https') {
-    $_SERVER['HTTPS'] = 'on';
-    $_SERVER['SERVER_PROTOCOL'] = 'HTTP/2.0';
-    $_SERVER['REQUEST_SCHEME'] = 'https';
-}
-
-function env($name, $default) {
+function env($name, $default = null) {
     if(defined('GENERATING_CONFIG_DOCUMENTATION')){
         __log_env($name, $default);
     }
@@ -52,7 +57,6 @@ function env($name, $default) {
 }
 
 function __env_not_false($var_name){
-    return true;
     return strtolower(env($var_name, 0)) !== 'false';
 }
 
@@ -107,3 +111,11 @@ function __log_env($name,$default){
     
     echo "$doc";
 }
+
+
+if (env('MAPAS_HTTPS', false) || isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https') {
+    $_SERVER['HTTPS'] = 'on';
+    $_SERVER['SERVER_PROTOCOL'] = 'HTTP/2.0';
+    $_SERVER['REQUEST_SCHEME'] = 'https';
+}
+

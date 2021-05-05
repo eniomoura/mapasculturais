@@ -23,7 +23,6 @@ class FileSystem extends \MapasCulturais\Storage{
      * /**
      *  * Sample Configuration (optional)
      *  * In below example the files will be accessible at url http://mapasculturais.domain/relative/url/
-     *  {@*}
      *  new \MapasCulturais\Storage\FileSystem(array(
      *      'dir' => '/full/path/',
      *      'baseUrl' => '/relative/url/'
@@ -196,6 +195,9 @@ class FileSystem extends \MapasCulturais\Storage{
         }
         \MapasCulturais\App::i()->em->refresh($entity);
         $files = array_map(function($item){
+            if (is_array($item)) {
+                $item = $item[0];
+            }
             return '"'.$this->getPath($item).'"';
         }, $entity->files);
 

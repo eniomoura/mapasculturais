@@ -110,9 +110,7 @@ class Registration extends EntityController {
                 return;
             }
 
-            $opportunity = $registration->opportunity;
-           
-            $this->registerRegistrationMetadata($opportunity);
+            $registration->registerFieldsMetadata();
             
         });
         //Dados recebido vindo da criação do formulário quando seleciona opção do espaço
@@ -120,44 +118,34 @@ class Registration extends EntityController {
            $this->createSpaceRelation();
         });
 
-        $app->hook('GET(registration.createSpaceRelation)', function() {
-            //dump($this->postData);
-            
-        });
         parent::__construct();
     }
+    
+     /**
+     * metodo vindo da edição da oportunidade, no campo de ESPAÇO CULTURAL tem que fazer a 
+     * verificação se já tem registro na tabela, se tiver deve fazer um update para o novo
+     * registro, caso contrário, deve fazer o registro
+     */
     function createSpaceRelation() {
         $app = App::i();
-        $user = $app->user;
-        $object_id  = $this->postData['object_id'];
-        $key        = $this->postData['key'];
-        $value      = $this->postData['value'];
-        $conn = $app->em->getConnection();
-        /**
-         * metodo vindo da edição da oportunidade, no campo de ESPAÇO CULTURAL tem que fazer a 
-         * verificação se já tem registro na tabela, se tiver deve fazer um update para o novo
-         * registro, caso contrário, deve fazer o registro
-         */
-        $sel = "SELECT * FROM opportunity_meta WHERE object_id = $object_id AND key = '$key';";
-        $querySel = $conn->fetchAll($sel);
-         if(empty($querySel)) {
-            $insertOM = $conn->executeQuery("INSERT INTO opportunity_meta(object_id,key,value) VALUES ($object_id,'$key','$value')");
-            if($insertOM){
-                $this->json(['message' => 'Edição realizada', 'status' => 200, 'type' => 'success']);
-            }else{
-                $this->json(['message' => 'Ocorreu um erro', 'status' => 500, 'type' => 'error']);
-            }
+        $sel = $app->repo('OpportunityMeta')->findOneBy([
+            'owner' =>  $this->postData['object_id'],
+            'key' => $this->postData['key']
+        ]);
+
+         if(empty($sel)) {
+            $op = $app->repo('Opportunity')->find($this->postData['object_id']);
+            $newOpMeta = new OpportunityMeta;
+            $newOpMeta->owner = $op;
+            $newOpMeta->key = $this->postData['key'];
+            $newOpMeta->value = $this->postData['value'];
+            $newOpMeta->save(true);
+            $this->json(['message' => 'Edição realizada', 'status' => 200, 'type' => 'success']);
         }else{
-            //UPDATE
-            $up = $conn->executeQuery("UPDATE opportunity_meta SET value = '$value' WHERE object_id = $object_id AND key = '$key'");
-            if($up){
-                $this->json(['message' => 'Edição realizada', 'status' => 200, 'type' => 'success']);
-            }else{
-                $this->json(['message' => 'Ocorreu um erro', 'status' => 500, 'type' => 'error']);
-            }
+            $sel->setValue($this->postData['value']);
+            $sel->save(true);
+            $this->json(['message' => 'Edição realizada', 'status' => 200, 'type' => 'success']);
         }
-        
-        
     }
     function POST_createSpaceRelation(){
         $this->requireAuthentication();
@@ -215,44 +203,7 @@ class Registration extends EntityController {
     }
 
     function registerRegistrationMetadata(\MapasCulturais\Entities\Opportunity $opportunity){
-       
-        $app = App::i();
-        
-        if($opportunity->projectName){
-           
-            $cfg = [ 'label' => \MapasCulturais\i::__('Nome do Projeto') ];
-            
-            $metadata = new Definitions\Metadata('projectName', $cfg);
-            $app->registerMetadata($metadata, 'MapasCulturais\Entities\Registration');
-        }
-        
-        foreach($opportunity->registrationFieldConfigurations as $field){
-
-            $cfg = [
-                'label' => $field->title,
-                'type' => $field->fieldType === 'checkboxes' ? 'checklist' : $field->fieldType ,
-                'private' => true,
-            ];
-
-            $def = $field->getFieldTypeDefinition();
-
-            if($def->requireValuesConfiguration){
-                $cfg['options'] = $field->fieldOptions;
-            }
-
-            if(is_callable($def->serialize)){
-                $cfg['serialize'] = $def->serialize;
-            }
-
-            if(is_callable($def->unserialize)){
-                $cfg['unserialize'] = $def->unserialize;
-            }
-
-            $metadata = new Definitions\Metadata($field->fieldName, $cfg);
-
-            $app->registerMetadata($metadata, 'MapasCulturais\Entities\Registration');
-        }
-        
+        $opportunity->registerRegistrationMetadata();
     }
     
     function getPreviewEntity(){
@@ -447,7 +398,7 @@ class Registration extends EntityController {
             }
         }
     }
-    
+
     function POST_saveEvaluation(){
         $registration = $this->getRequestedEntity();
         if(isset($this->postData['uid'])){
@@ -455,15 +406,26 @@ class Registration extends EntityController {
         } else {
             $user = null;
         }
-        
-        if(isset($this->urlData['status']) && $this->urlData['status'] === 'evaluated'){
-            if($errors = $registration->getEvaluationMethod()->getValidationErrors($registration->getEvaluationMethodConfiguration(), $this->postData['data'])){
-                $this->errorJson($errors, 400);
-                return;
-            } else {
+
+        if (isset($this->urlData['status'])) {
+            if ($this->urlData['status'] === 'evaluated') {
+                if ($errors = $registration->getEvaluationMethod()->getValidationErrors($registration->getEvaluationMethodConfiguration(), $this->postData['data'])){
+                    $this->errorJson($errors, 400);
+                    return;
+                }
                 $status = Entities\RegistrationEvaluation::STATUS_EVALUATED;
-                $evaluation = $registration->saveUserEvaluation($this->postData['data'], $user, $status);
+            } else if ($this->urlData['status'] === 'draft') {
+                $evaluation = $registration->getUserEvaluation($user);
+                if (!$evaluation || !$evaluation->canUser('modify', $user)) {
+                    $this->errorJson("User {$user->id} is trying to modify evaluation {$evaluation->id}.", 401);
+                    return;
+                }
+                $status = Entities\RegistrationEvaluation::STATUS_DRAFT;
+            } else {
+                $this->errorJson("Invalid evaluation status {$this->urlData["status"]} received from client.", 400);
+                return;
             }
+            $evaluation = $registration->saveUserEvaluation(($this->postData['data'] ?? []), $user, $status);
         } else {
             $evaluation = $registration->saveUserEvaluation($this->postData['data'], $user);
         }
@@ -541,5 +503,55 @@ class Registration extends EntityController {
         $this->_finishRequest($registration);
         $app->enableAccessControl();
     
+    }
+
+    function POST_validateEntity() {
+        $entity = $this->requestedEntity;
+
+        if (!$entity) {
+            App::i()->pass();
+        }
+
+        $entity->checkPermission('validate');
+        
+        foreach ($this->postData as $field => $value) {
+            $entity->$field = $value;
+        }
+        
+        if ($errors = $entity->getSendValidationErrors()) {
+            $this->errorJson($errors);
+        } else {
+            $this->json(true);
+        }
+    }
+
+    function POST_validateProperties() {
+        $entity = $this->requestedEntity;
+
+        if (!$entity) {
+            App::i()->pass();
+        }
+
+        $entity->checkPermission('validate');
+        
+        foreach ($this->postData as $field => $value) {
+            App::i()->log->debug("$field $value");
+            $entity->$field = $value;
+        }
+
+        if ($_errors = $entity->getSendValidationErrors()) {
+            $errors = [];
+            foreach($this->postData as $field => $value){
+                if(key_exists($field, $_errors)){
+                    $errors[$field] = $_errors[$field];
+                }
+            }
+
+            if($errors){
+                $this->errorJson($errors);
+            }
+        } 
+        
+        $this->json(true);
     }
 }
