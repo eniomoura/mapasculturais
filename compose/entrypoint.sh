@@ -43,4 +43,6 @@ tail -f /nohup.out > /dev/stdout &
 
 #touch /mapas-ready
 
+nginx
+
 exec "$@"
