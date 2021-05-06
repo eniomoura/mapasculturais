@@ -37,7 +37,7 @@ fi
 #chown -R www-data:www-data /var/www/html/assets /var/www/html/files /var/www/private-files
 
 cd /
-touch /nohup.out
+#touch /nohup.out
 nohup /jobs-cron.sh >> /dev/stdout &
 nohup /recreate-pending-pcache-cron.sh >> /dev/stdout &
 
